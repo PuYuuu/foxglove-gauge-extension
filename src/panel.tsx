@@ -2,7 +2,7 @@
  * @Author: puyu yu.pu@qq.com
  * @Date: 2025-12-22 23:19:47
  * @LastEditors: puyu yu.pu@qq.com
- * @LastEditTime: 2025-12-23 00:03:45
+ * @LastEditTime: 2025-12-23 00:32:24
  * @FilePath: \gauge_utils\src\panel.tsx
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -16,13 +16,16 @@ import {
 import { ReactElement, useEffect, useLayoutEffect, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import Speedometer from "./Speedometer";
+import SteeringWheel from "./SteeringWheel";
 
 type PanelState = {
   data: {
-    topic?: string;
-    fieldPath?: string;
+    messagePath?: string;
     min: number;
     max: number;
+  };
+  view: {
+    component: "speedometer" | "steeringWheel";
   };
 };
 
@@ -46,6 +49,30 @@ function getFieldValue(message: unknown, path: string | undefined): unknown {
   return current;
 }
 
+function parseMessagePath(messagePath: string | undefined): {
+  topic?: string;
+  fieldPath?: string;
+} {
+  if (!messagePath) {
+    return {};
+  }
+
+  const trimmed = messagePath.trim();
+  if (!trimmed) {
+    return {};
+  }
+
+  const dotIndex = trimmed.indexOf(".");
+  if (dotIndex === -1) {
+    return { topic: trimmed };
+  }
+
+  return {
+    topic: trimmed.slice(0, dotIndex),
+    fieldPath: trimmed.slice(dotIndex + 1),
+  };
+}
+
 function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactElement {
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
@@ -55,12 +82,26 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
 
   const [state, setState] = useState<PanelState>(() => {
     const initial = context.initialState as Partial<PanelState> | undefined;
+
+    // 兼容旧版本单独保存 topic 和 fieldPath 的状态
+    const legacyData = (context.initialState as any)?.data as
+      | { topic?: string; fieldPath?: string; min?: number; max?: number }
+      | undefined;
+    const legacyTopic = legacyData?.topic;
+    const legacyFieldPath = legacyData?.fieldPath;
+    const legacyMessagePath =
+      legacyTopic && legacyTopic.length > 0
+        ? `${legacyTopic}${legacyFieldPath ? `.${legacyFieldPath}` : ""}`
+        : undefined;
+
     return {
       data: {
-        topic: initial?.data?.topic ?? "/some/topic",
-        fieldPath: initial?.data?.fieldPath ?? "",
+        messagePath: initial?.data?.messagePath ?? legacyMessagePath ?? "",
         min: initial?.data?.min ?? 0,
         max: initial?.data?.max ?? 120,
+      },
+      view: {
+        component: initial?.view?.component ?? "speedometer",
       },
     };
   });
@@ -73,33 +114,36 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
       }
 
       const { path, value } = action.payload;
-      if (path[0] !== "data") {
-        return;
-      }
-
+      const group = path[0];
       const field = path[1];
 
       setState((prev) => {
         const next: PanelState = {
           data: { ...prev.data },
+          view: { ...prev.view },
         };
 
-        if (field === "topic") {
-          next.data.topic = value as string;
-          if (next.data.topic) {
-            context.subscribe([{ topic: next.data.topic }]);
+        if (group === "data") {
+          if (field === "messagePath") {
+            next.data.messagePath = value as string;
+            const { topic } = parseMessagePath(next.data.messagePath);
+            if (topic) {
+              context.subscribe([{ topic }]);
+            }
+          } else if (field === "min") {
+            const num = Number(value);
+            if (!Number.isNaN(num)) {
+              next.data.min = num;
+            }
+          } else if (field === "max") {
+            const num = Number(value);
+            if (!Number.isNaN(num)) {
+              next.data.max = num;
+            }
           }
-        } else if (field === "fieldPath") {
-          next.data.fieldPath = value as string;
-        } else if (field === "min") {
-          const num = Number(value);
-          if (!Number.isNaN(num)) {
-            next.data.min = num;
-          }
-        } else if (field === "max") {
-          const num = Number(value);
-          if (!Number.isNaN(num)) {
-            next.data.max = num;
+        } else if (group === "view") {
+          if (field === "component") {
+            next.view.component = value as PanelState["view"]["component"];
           }
         }
 
@@ -121,20 +165,32 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
     context.updatePanelSettingsEditor({
       actionHandler,
       nodes: {
+        view: {
+          label: "Display",
+          icon: "World",
+          fields: {
+            component: {
+              label: "Component",
+              input: "select",
+              value: state.view.component,
+              options: [
+                { value: "speedometer", label: "Speedometer" },
+                { value: "steeringWheel", label: "Steering Wheel" },
+              ],
+            },
+          },
+        },
         data: {
-          label: "Speedometer Settings",
+          label: "Data",
           icon: "Settings",
           fields: {
-            topic: {
-              label: "Topic",
-              input: "select",
-              options: topicOptions,
-              value: state.data.topic,
-            },
-            fieldPath: {
-              label: "Field path (e.g. data.speed)",
-              input: "string",
-              value: state.data.fieldPath ?? "",
+            messagePath: {
+              label: "Message path",
+              input: "messagepath",
+              value: state.data.messagePath ?? "",
+              validTypes: ["float32", "float64", "int8", "uint8", "int16", "uint16", "int32", "uint32"],
+              validTopics: topicOptions.map((opt) => opt.value ?? ""),
+              supportsMathModifiers: true,
             },
             min: {
               label: "Min Value",
@@ -164,10 +220,11 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
     context.watch("topics");
 
     context.watch("currentFrame");
-    if (state.data.topic) {
-      context.subscribe([{ topic: state.data.topic }]);
+    const { topic } = parseMessagePath(state.data.messagePath);
+    if (topic) {
+      context.subscribe([{ topic }]);
     }
-  }, [context, state.data.topic]);
+  }, [context, state.data.messagePath]);
 
   // invoke the done callback once the render is complete
   useEffect(() => {
@@ -177,22 +234,28 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
   // topic 或字段路径变更时重置为 0，避免沿用旧 topic 的值
   useEffect(() => {
     setSpeedValue(0);
-  }, [state.data.topic, state.data.fieldPath]);
+  }, [state.data.messagePath]);
 
   // 从当前帧中选取所选 topic 的最新消息，并按字段路径取值，只在有新值时更新
   useEffect(() => {
-    if (!messages || !state.data.topic || !state.data.fieldPath) {
+    if (!messages || !state.data.messagePath) {
       return;
     }
 
-    const eventsForTopic = messages.filter((event) => event.topic === state.data.topic);
+    const { topic, fieldPath } = parseMessagePath(state.data.messagePath);
+    if (!topic) {
+      return;
+    }
+
+    const eventsForTopic = messages.filter((event) => event.topic === topic);
     const lastEvent = eventsForTopic[eventsForTopic.length - 1];
 
     if (!lastEvent) {
       return;
     }
 
-    const rawValue = getFieldValue((lastEvent as MessageEvent).message, state.data.fieldPath);
+    const message = (lastEvent as MessageEvent).message;
+    const rawValue = fieldPath ? getFieldValue(message, fieldPath) : (message as unknown);
 
     let nextValue: number | undefined;
     if (typeof rawValue === "number") {
@@ -207,7 +270,7 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
     if (typeof nextValue === "number" && !Number.isNaN(nextValue)) {
       setSpeedValue(nextValue);
     }
-  }, [messages, state.data.topic, state.data.fieldPath]);
+  }, [messages, state.data.messagePath]);
 
   return (
     <div
@@ -219,7 +282,11 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
         boxSizing: "border-box",
       }}
     >
-      <Speedometer value={speedValue * 3.6} min={state.data.min} max={state.data.max} />
+      {state.view.component === "speedometer" ? (
+        <Speedometer value={speedValue * 3.6} min={state.data.min} max={state.data.max} />
+      ) : (
+        <SteeringWheel angle={speedValue * 15.6 * 57.29578} />
+      )}
     </div>
   );
 }
