@@ -2,7 +2,7 @@
  * @Author: puyu yu.pu@qq.com
  * @Date: 2025-12-22 23:19:47
  * @LastEditors: puyu yu.pu@qq.com
- * @LastEditTime: 2025-12-23 00:32:24
+ * @LastEditTime: 2025-12-26 23:05:29
  * @FilePath: \gauge_utils\src\panel.tsx
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -17,15 +17,17 @@ import { ReactElement, useEffect, useLayoutEffect, useState, useCallback } from 
 import { createRoot } from "react-dom/client";
 import Speedometer from "./Speedometer";
 import SteeringWheel from "./SteeringWheel";
+import TimeSeriesChart from "./TimeSeriesChart";
 
 type PanelState = {
   data: {
     messagePath?: string;
     min: number;
     max: number;
+    timeWindow: number; // 时间窗口，单位秒
   };
   view: {
-    component: "speedometer" | "steeringWheel";
+    component: "speedometer" | "steeringWheel" | "timeSeriesChart";
   };
 };
 
@@ -76,9 +78,11 @@ function parseMessagePath(messagePath: string | undefined): {
 function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactElement {
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
+  const [colorScheme, setColorScheme] = useState<"light" | "dark">("dark");
 
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
   const [speedValue, setSpeedValue] = useState(0);
+  const [messageTimestamp, setMessageTimestamp] = useState(0);
 
   const [state, setState] = useState<PanelState>(() => {
     const initial = context.initialState as Partial<PanelState> | undefined;
@@ -99,6 +103,7 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
         messagePath: initial?.data?.messagePath ?? legacyMessagePath ?? "",
         min: initial?.data?.min ?? 0,
         max: initial?.data?.max ?? 120,
+        timeWindow: initial?.data?.timeWindow ?? 10,
       },
       view: {
         component: initial?.view?.component ?? "speedometer",
@@ -140,6 +145,11 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
             if (!Number.isNaN(num)) {
               next.data.max = num;
             }
+          } else if (field === "timeWindow") {
+            const num = Number(value);
+            if (!Number.isNaN(num) && num > 0) {
+              next.data.timeWindow = num;
+            }
           }
         } else if (group === "view") {
           if (field === "component") {
@@ -176,6 +186,7 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
               options: [
                 { value: "speedometer", label: "Speedometer" },
                 { value: "steeringWheel", label: "Steering Wheel" },
+                { value: "timeSeriesChart", label: "Time Series Chart" },
               ],
             },
           },
@@ -202,6 +213,14 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
               input: "number",
               value: state.data.max,
             },
+            timeWindow: {
+              label: "Time Window (seconds)",
+              input: "number",
+              value: state.data.timeWindow,
+              min: 1,
+              max: 300,
+              step: 1,
+            },
           },
         },
       },
@@ -215,9 +234,14 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
       setTopics(renderState.topics);
 
       setMessages(renderState.currentFrame);
+      
+      if (renderState.colorScheme) {
+        setColorScheme(renderState.colorScheme);
+      }
     };
 
     context.watch("topics");
+    context.watch("colorScheme");
 
     context.watch("currentFrame");
     const { topic } = parseMessagePath(state.data.messagePath);
@@ -254,6 +278,11 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
       return;
     }
 
+    // 提取消息时间戳（使用receiveTime）
+    const receiveTime = lastEvent.receiveTime;
+    const timestampMs = receiveTime.sec * 1000 + receiveTime.nsec / 1000000;
+    setMessageTimestamp(timestampMs);
+
     const message = (lastEvent as MessageEvent).message;
     const rawValue = fieldPath ? getFieldValue(message, fieldPath) : (message as unknown);
 
@@ -278,14 +307,24 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
         width: "100%",
         height: "100%",
         backgroundColor: "transparent",
-        padding: 16,
+        padding: state.view.component === "timeSeriesChart" ? 0 : 8,
         boxSizing: "border-box",
       }}
     >
       {state.view.component === "speedometer" ? (
         <Speedometer value={speedValue * 3.6} min={state.data.min} max={state.data.max} />
-      ) : (
+      ) : state.view.component === "steeringWheel" ? (
         <SteeringWheel angle={speedValue * 15.6 * 57.29578} />
+      ) : (
+        <TimeSeriesChart 
+          value={speedValue}
+          timestamp={messageTimestamp}
+          min={state.data.min} 
+          max={state.data.max} 
+          autoScale={true} 
+          colorScheme={colorScheme}
+          timeWindowSeconds={state.data.timeWindow}
+        />
       )}
     </div>
   );
