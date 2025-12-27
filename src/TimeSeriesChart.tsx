@@ -1,7 +1,7 @@
 /*
  * @Author: puyu yu.pu@qq.com
  * @Date: 2025-12-23 22:40:39
- * @LastEditTime: 2025-12-27 21:37:15
+ * @LastEditTime: 2025-12-27 22:31:47
  * @FilePath: \foxglove-gauge-extension\src\TimeSeriesChart.tsx
  */
 
@@ -17,6 +17,7 @@ interface TimeSeriesChartProps {
   timestamp: number; // 毫秒时间戳
   timeWindowSeconds?: number; // 时间窗口，单位秒
   lineColor?: string;
+  lineWidth?: number; // 线条宽度
   backgroundColor?: string;
   gridColor?: string;
   showGrid?: boolean;
@@ -24,6 +25,8 @@ interface TimeSeriesChartProps {
   max?: number;
   autoScale?: boolean;
   colorScheme?: "light" | "dark";
+  valueDisplayMode?: "dynamic" | "center"; // 当前值显示方式
+  alpha?: number; // 低通滤波系数，0-1之间，0表示不滤波
 }
 
 const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
@@ -31,9 +34,12 @@ const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
   timestamp,
   timeWindowSeconds = 10,
   lineColor,
+  lineWidth = 2,
   backgroundColor,
   showGrid = true,
   colorScheme = "dark",
+  valueDisplayMode = "dynamic",
+  alpha = 0,
 }) => {
   const [dataPoints, setDataPoints] = useState<DataPoint[]>([]);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -55,7 +61,7 @@ const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
     if (timestamp === 0) {
       return;
     }
-    
+
     setDataPoints((prev) => {
       // 检测是否需要清空数据（拖动进度条等场景）
       const shouldClear = prev.length > 0 && (() => {
@@ -71,23 +77,29 @@ const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
         return false;
       })();
 
-      // 如果需要清空，从空数组开始
       const baseArray = shouldClear ? [] : prev;
       
-      // 添加新数据点
-      const newPoint: DataPoint = { timestamp, value };
-      const updated = [...baseArray, newPoint];
+      // 应用低通滤波
+      let filteredValue = value;
+      if (alpha > 0 && alpha <= 1) {
+        const lastValue = baseArray.length > 0 ? baseArray[baseArray.length - 1]!.value : 0;
+        filteredValue = lastValue * alpha + value * (1 - alpha);
+      }
       
+      // 添加新数据点
+      const newPoint: DataPoint = { timestamp, value: filteredValue };
+      const updated = [...baseArray, newPoint];
+
       // 移除超出时间窗口的数据点
       const windowMs = timeWindowSeconds * 1000;
       const cutoffTime = timestamp - windowMs;
       const filtered = updated.filter(p => p.timestamp >= cutoffTime);
-      
+
       return filtered;
     });
-    
+
     lastUpdateTime.current = timestamp;
-  }, [value, timestamp, timeWindowSeconds]);
+  }, [value, timestamp, timeWindowSeconds, alpha]);
 
   // 绘制图表
   useEffect(() => {
@@ -192,7 +204,7 @@ const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
 
     // 绘制曲线
     ctx.strokeStyle = finalLineColor;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = lineWidth;
 
     // 将时间转换为X坐标
     const timeToX = (timestamp: number) => {
@@ -246,24 +258,35 @@ const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
 
       ctx.stroke();
 
-      // 绘制当前值标记点
+      // 绘制当前值标记点和数值
       if (now - lastPoint.timestamp <= 100) {
         const lastX = timeToX(now);
         const lastY = valueToY(lastPoint.value);
 
+        // 绘制标记点
         ctx.fillStyle = finalLineColor;
         ctx.beginPath();
         ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // 显示当前值
-        ctx.fillStyle = textColor;
-        ctx.font = "bold 18px Arial";
-        ctx.textAlign = "left";
-        ctx.textBaseline = "middle";
-        const displayX = lastX + 8 > width - padding.right ? lastX - 8 : lastX + 8;
-        ctx.textAlign = lastX + 8 > width - padding.right ? "right" : "left";
-        ctx.fillText(`${lastPoint.value.toFixed(2)}`, displayX, lastY);
+        if (valueDisplayMode === "center") {
+          ctx.fillStyle = textColor;
+          ctx.globalAlpha = 0.6;
+          ctx.font = "bold 96px Arial";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(`${lastPoint.value.toFixed(2)}`, width / 2, height / 2);
+          ctx.globalAlpha = 1.0;
+        } else {
+          ctx.fillStyle = textColor;
+          ctx.globalAlpha = 0.8;
+          ctx.font = "bold 18px Arial";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          const displayX = lastX + 8 > width - padding.right ? lastX - 8 : lastX + 8;
+          ctx.textAlign = lastX + 8 > width - padding.right ? "right" : "left";
+          ctx.fillText(`${lastPoint.value.toFixed(2)}`, displayX, lastY);
+        }
       }
     } else {
       // 没有数据时，绘制0线
@@ -288,6 +311,7 @@ const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
     dataPoints,
     timeWindowSeconds,
     finalLineColor,
+    lineWidth,
     finalBackgroundColor,
     finalGridColor,
     textColor,
@@ -295,6 +319,7 @@ const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
     axisColor,
     showGrid,
     canvasSize,
+    valueDisplayMode,
   ]);
   // 响应式调整canvas大小（支持高DPI显示）
   useEffect(() => {
@@ -318,11 +343,11 @@ const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
         if (ctx) {
           ctx.scale(dpr, dpr);
         }
-        
+
         // CSS大小保持不变
         canvas.style.width = `${rect.width}px`;
         canvas.style.height = `${rect.height}px`;
-        
+
         // 触发重绘
         setCanvasSize({ width: rect.width, height: rect.height });
       }

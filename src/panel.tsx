@@ -1,7 +1,7 @@
 /*
  * @Author: puyu yu.pu@qq.com
  * @Date: 2025-12-22 23:19:47
- * @LastEditTime: 2025-12-27 21:31:14
+ * @LastEditTime: 2025-12-27 22:49:44
  * @FilePath: \foxglove-gauge-extension\src\panel.tsx
  */
 
@@ -25,6 +25,11 @@ type PanelState = {
     max: number;
     timeWindow: number; // 时间窗口，单位秒
     showGrid?: boolean;
+    valueDisplayMode?: "dynamic" | "center";
+    showAngle?: boolean; // 方向盘是否显示角度
+    lineColor?: string; // 时序图线条颜色
+    lineWidth?: number; // 时序图线条宽度
+    alpha?: number; // 低通滤波系数
   };
   view: {
     component: "speedometer" | "steeringWheel" | "timeSeriesChart";
@@ -81,7 +86,7 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
   const [colorScheme, setColorScheme] = useState<"light" | "dark">("dark");
 
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
-  const [speedValue, setSpeedValue] = useState(0);
+  const [messageValue, setmessageValue] = useState(0);
   const [messageTimestamp, setMessageTimestamp] = useState(0);
 
   const [state, setState] = useState<PanelState>(() => {
@@ -152,6 +157,22 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
             }
           } else if (field === "showGrid") {
             next.data.showGrid = value as boolean;
+          } else if (field === "valueDisplayMode") {
+            next.data.valueDisplayMode = value as "dynamic" | "center";
+          } else if (field === "showAngle") {
+            next.data.showAngle = value as boolean;
+          } else if (field === "lineColor") {
+            next.data.lineColor = value as string;
+          } else if (field === "lineWidth") {
+            const num = Number(value);
+            if (!Number.isNaN(num) && num > 0) {
+              next.data.lineWidth = num;
+            }
+          } else if (field === "alpha") {
+            const num = Number(value);
+            if (!Number.isNaN(num) && num >= 0 && num <= 1) {
+              next.data.alpha = num;
+            }
           }
         } else if (group === "view") {
           if (field === "component") {
@@ -212,8 +233,43 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
         input: "boolean",
         value: state.data.showGrid ?? true,
       };
+      dataFields.valueDisplayMode = {
+        label: "Value Display",
+        input: "select",
+        value: state.data.valueDisplayMode ?? "dynamic",
+        options: [
+          { value: "dynamic", label: "Follow" },
+          { value: "center", label: "Center" },
+        ],
+      };
+      dataFields.lineColor = {
+        label: "Line Color",
+        input: "rgb",
+        value: state.data.lineColor ?? "#0066cc",
+      };
+      dataFields.lineWidth = {
+        label: "Line Width",
+        input: "number",
+        value: state.data.lineWidth ?? 2,
+        min: 1,
+        max: 10,
+        step: 0.5,
+      };
+      dataFields.alpha = {
+        label: "Filter Alpha",
+        input: "number",
+        value: state.data.alpha ?? 0,
+        min: 0,
+        max: 1,
+        step: 0.01,
+      };
+    } else if (state.view.component === "steeringWheel") {
+      dataFields.showAngle = {
+        label: "Show Angle",
+        input: "boolean",
+        value: state.data.showAngle ?? false,
+      };
     }
-    // steeringWheel 不需要额外的设置项
 
     context.updatePanelSettingsEditor({
       actionHandler,
@@ -273,7 +329,7 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
 
   // topic 或字段路径变更时重置为 0，避免沿用旧 topic 的值
   useEffect(() => {
-    setSpeedValue(0);
+    setmessageValue(0);
   }, [state.data.messagePath]);
 
   // 从当前帧中选取所选 topic 的最新消息，并按字段路径取值，只在有新值时更新
@@ -313,7 +369,7 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
     }
 
     if (typeof nextValue === "number" && !Number.isNaN(nextValue)) {
-      setSpeedValue(nextValue);
+      setmessageValue(nextValue);
     }
   }, [messages, state.data.messagePath]);
 
@@ -328,16 +384,20 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
       }}
     >
       {state.view.component === "speedometer" ? (
-        <Speedometer value={speedValue * 3.6} min={state.data.min} max={state.data.max} />
+        <Speedometer value={messageValue * 3.6} min={state.data.min} max={state.data.max} />
       ) : state.view.component === "steeringWheel" ? (
-        <SteeringWheel angle={speedValue * 15.6 * 57.29578} />
+        <SteeringWheel angle={messageValue * 15.6 * 57.29578} showAngle={state.data.showAngle} />
       ) : (
         <TimeSeriesChart 
-          value={speedValue}
+          value={messageValue}
           timestamp={messageTimestamp}
           colorScheme={colorScheme}
           showGrid={state.data.showGrid}
+          valueDisplayMode={state.data.valueDisplayMode}
           timeWindowSeconds={state.data.timeWindow}
+          lineColor={state.data.lineColor}
+          lineWidth={state.data.lineWidth}
+          alpha={state.data.alpha}
         />
       )}
     </div>

@@ -9,9 +9,11 @@ import React from "react";
 
 interface SteeringWheelProps {
   angle: number; // 当前方向盘转角（单位：度，正负表示左右）
+  showAngle?: boolean; // 是否显示当前角度
 }
 
-const SteeringWheel: React.FC<SteeringWheelProps> = ({ angle }) => {
+const SteeringWheel: React.FC<SteeringWheelProps> = ({ angle, showAngle = false }) => {
+  const originalAngle = angle; // 保存原始角度用于显示
   angle = Math.max(Math.min(angle, 450), -450); // 限制最大转角为 ±450 度
   angle = angle * -1.0; // 方向盘转动方向与角度符号相反
   return (
@@ -24,8 +26,26 @@ const SteeringWheel: React.FC<SteeringWheelProps> = ({ angle }) => {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        position: "relative",
       }}
     >
+      {/* 角度显示 */}
+      {showAngle && (
+        <div
+          style={{
+            position: "absolute",
+            top: "10px",
+            right: "10px",
+            fontSize: "24px",
+            fontWeight: "bold",
+            color: "#ffffff",
+            textShadow: "2px 2px 4px rgba(0,0,0,0.8)",
+            zIndex: 10,
+          }}
+        >
+          {originalAngle.toFixed(1)}°
+        </div>
+      )}
       <svg
         viewBox="0 0 400 400"
         preserveAspectRatio="xMidYMid meet"
