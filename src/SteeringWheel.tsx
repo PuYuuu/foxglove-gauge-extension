@@ -1,3 +1,10 @@
+/*
+ * @Author: puyu yu.pu@qq.com
+ * @Date: 2025-12-23 00:21:43
+ * @LastEditTime: 2025-12-26 23:52:44
+ * @FilePath: \foxglove-gauge-extension\src\SteeringWheel.tsx
+ */
+
 import React from "react";
 
 interface SteeringWheelProps {

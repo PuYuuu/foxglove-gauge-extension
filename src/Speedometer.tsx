@@ -1,3 +1,10 @@
+/*
+ * @Author: puyu yu.pu@qq.com
+ * @Date: 2025-12-22 23:27:20
+ * @LastEditTime: 2025-12-26 23:52:22
+ * @FilePath: \foxglove-gauge-extension\src\Speedometer.tsx
+ */
+
 import React, { useMemo } from "react";
 
 interface SpeedometerProps {

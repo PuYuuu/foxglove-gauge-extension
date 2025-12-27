@@ -1,11 +1,10 @@
 /*
  * @Author: puyu yu.pu@qq.com
  * @Date: 2025-12-22 23:19:47
- * @LastEditors: puyu yu.pu@qq.com
- * @LastEditTime: 2025-12-26 23:05:29
- * @FilePath: \gauge_utils\src\panel.tsx
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ * @LastEditTime: 2025-12-27 21:31:14
+ * @FilePath: \foxglove-gauge-extension\src\panel.tsx
  */
+
 import {
   Immutable,
   MessageEvent,
@@ -25,6 +24,7 @@ type PanelState = {
     min: number;
     max: number;
     timeWindow: number; // 时间窗口，单位秒
+    showGrid?: boolean;
   };
   view: {
     component: "speedometer" | "steeringWheel" | "timeSeriesChart";
@@ -150,6 +150,8 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
             if (!Number.isNaN(num) && num > 0) {
               next.data.timeWindow = num;
             }
+          } else if (field === "showGrid") {
+            next.data.showGrid = value as boolean;
           }
         } else if (group === "view") {
           if (field === "component") {
@@ -171,6 +173,47 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
       value: topic.name,
       label: topic.name,
     }));
+
+    // 根据当前组件类型动态生成数据设置字段
+    const dataFields: Record<string, any> = {
+      messagePath: {
+        label: "Message path",
+        input: "messagepath",
+        value: state.data.messagePath ?? "",
+        validTypes: ["float32", "float64", "int8", "uint8", "int16", "uint16", "int32", "uint32"],
+        validTopics: topicOptions.map((opt) => opt.value ?? ""),
+        supportsMathModifiers: true,
+      },
+    };
+
+    // 根据组件类型添加特定的设置项
+    if (state.view.component === "speedometer") {
+      dataFields.min = {
+        label: "Min Value",
+        input: "number",
+        value: state.data.min,
+      };
+      dataFields.max = {
+        label: "Max Value",
+        input: "number",
+        value: state.data.max,
+      };
+    } else if (state.view.component === "timeSeriesChart") {
+      dataFields.timeWindow = {
+        label: "Time Window (seconds)",
+        input: "number",
+        value: state.data.timeWindow,
+        min: 1,
+        max: 300,
+        step: 1,
+      };
+      dataFields.showGrid = {
+        label: "Show Grid",
+        input: "boolean",
+        value: state.data.showGrid ?? true,
+      };
+    }
+    // steeringWheel 不需要额外的设置项
 
     context.updatePanelSettingsEditor({
       actionHandler,
@@ -194,34 +237,7 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
         data: {
           label: "Data",
           icon: "Settings",
-          fields: {
-            messagePath: {
-              label: "Message path",
-              input: "messagepath",
-              value: state.data.messagePath ?? "",
-              validTypes: ["float32", "float64", "int8", "uint8", "int16", "uint16", "int32", "uint32"],
-              validTopics: topicOptions.map((opt) => opt.value ?? ""),
-              supportsMathModifiers: true,
-            },
-            min: {
-              label: "Min Value",
-              input: "number",
-              value: state.data.min,
-            },
-            max: {
-              label: "Max Value",
-              input: "number",
-              value: state.data.max,
-            },
-            timeWindow: {
-              label: "Time Window (seconds)",
-              input: "number",
-              value: state.data.timeWindow,
-              min: 1,
-              max: 300,
-              step: 1,
-            },
-          },
+          fields: dataFields,
         },
       },
     });
@@ -319,10 +335,8 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
         <TimeSeriesChart 
           value={speedValue}
           timestamp={messageTimestamp}
-          min={state.data.min} 
-          max={state.data.max} 
-          autoScale={true} 
           colorScheme={colorScheme}
+          showGrid={state.data.showGrid}
           timeWindowSeconds={state.data.timeWindow}
         />
       )}
