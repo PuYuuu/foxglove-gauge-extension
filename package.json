@@ -1,10 +1,10 @@
 {
   "name": "gauge_utils",
   "displayName": "gauge_utils",
-  "description": "",
+  "description": "Visualize vehicle data with customizable gauges: speedometer, steering wheel, and time series charts. Supports Foxglove math modifiers for real-time data transformation.",
   "publisher": "puyu",
-  "homepage": "",
-  "version": "0.0.1",
+  "homepage": "https://github.com/PuYuuu/foxglove-gauge-extension",
+  "version": "1.0.0",
   "license": "UNLICENSED",
   "main": "./dist/extension.js",
   "keywords": [],

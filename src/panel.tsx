@@ -1,7 +1,7 @@
 /*
  * @Author: puyu yu.pu@qq.com
  * @Date: 2025-12-22 23:19:47
- * @LastEditTime: 2025-12-27 22:49:44
+ * @LastEditTime: 2025-12-28 21:48:03
  * @FilePath: \foxglove-gauge-extension\src\panel.tsx
  */
 
@@ -23,25 +23,214 @@ type PanelState = {
     messagePath?: string;
     min: number;
     max: number;
-    timeWindow: number; // 时间窗口，单位秒
+    timeWindow?: number;   // 时间窗口，单位秒
     showGrid?: boolean;
     valueDisplayMode?: "dynamic" | "center";
-    showAngle?: boolean; // 方向盘是否显示角度
-    lineColor?: string; // 时序图线条颜色
-    lineWidth?: number; // 时序图线条宽度
-    alpha?: number; // 低通滤波系数
+    showAngle?: boolean;  // 方向盘是否显示角度
+    lineColor?: string;   // 时序图线条颜色
+    lineWidth?: number;   // 时序图线条宽度
+    alpha?: number;       // 低通滤波系数
   };
   view: {
     component: "speedometer" | "steeringWheel" | "timeSeriesChart";
   };
 };
 
-function getFieldValue(message: unknown, path: string | undefined): unknown {
+// Math modifier parser and applier
+type MathModifier = {
+  type: "simple" | "parameterized";
+  name:
+    | "abs"
+    | "acos"
+    | "asin"
+    | "atan"
+    | "ceil"
+    | "cos"
+    | "log"
+    | "log1p"
+    | "log2"
+    | "log10"
+    | "negative"
+    | "round"
+    | "sign"
+    | "sin"
+    | "sqrt"
+    | "tan"
+    | "trunc"
+    | "delta"
+    | "derivative"
+    | "add"
+    | "sub"
+    | "mul"
+    | "div";
+  operand?: number;
+};
+
+function parseMathModifiers(path: string): { fieldPath: string; modifiers: MathModifier[] } {
+  const modifiers: MathModifier[] = [];
+  let currentPath = path;
+
+  // 匹配所有 .@modifier 或 .@modifier(operand) 的模式
+  const modifierRegex = /\.@(\w+)(?:\(([^)]+)\))?/g;
+  let match;
+
+  while ((match = modifierRegex.exec(path)) !== null) {
+    const modifierName = match[1];
+    const operand = match[2];
+
+    // 检查是否是有效的修饰符
+    const simpleModifiers = [
+      "abs",
+      "acos",
+      "asin",
+      "atan",
+      "ceil",
+      "cos",
+      "log",
+      "log1p",
+      "log2",
+      "log10",
+      "negative",
+      "round",
+      "sign",
+      "sin",
+      "sqrt",
+      "tan",
+      "trunc",
+      "delta",
+      "derivative",
+    ];
+    const parameterizedModifiers = ["add", "sub", "mul", "div"];
+
+    if (modifierName && simpleModifiers.includes(modifierName)) {
+      modifiers.push({
+        type: "simple",
+        name: modifierName as any,
+      });
+    } else if (modifierName && parameterizedModifiers.includes(modifierName) && operand !== undefined) {
+      const numOperand = Number(operand);
+      if (!Number.isNaN(numOperand)) {
+        modifiers.push({
+          type: "parameterized",
+          name: modifierName as any,
+          operand: numOperand,
+        });
+      }
+    }
+  }
+
+  // 移除所有修饰符后缀，得到纯字段路径
+  const cleanPath = path.replace(modifierRegex, "");
+
+  return { fieldPath: cleanPath, modifiers };
+}
+
+function applyMathModifiers(
+  value: number,
+  modifiers: MathModifier[],
+  previousValue?: { value: number; timestamp: number },
+  currentTimestamp?: number,
+): number {
+  let result = value;
+
+  for (const modifier of modifiers) {
+    switch (modifier.name) {
+      case "abs":
+        result = Math.abs(result);
+        break;
+      case "acos":
+        result = Math.acos(result);
+        break;
+      case "asin":
+        result = Math.asin(result);
+        break;
+      case "atan":
+        result = Math.atan(result);
+        break;
+      case "ceil":
+        result = Math.ceil(result);
+        break;
+      case "cos":
+        result = Math.cos(result);
+        break;
+      case "log":
+        result = Math.log(result);
+        break;
+      case "log1p":
+        result = Math.log1p(result);
+        break;
+      case "log2":
+        result = Math.log2(result);
+        break;
+      case "log10":
+        result = Math.log10(result);
+        break;
+      case "negative":
+        result = -result;
+        break;
+      case "round":
+        result = Math.round(result);
+        break;
+      case "sign":
+        result = Math.sign(result);
+        break;
+      case "sin":
+        result = Math.sin(result);
+        break;
+      case "sqrt":
+        result = Math.sqrt(result);
+        break;
+      case "tan":
+        result = Math.tan(result);
+        break;
+      case "trunc":
+        result = Math.trunc(result);
+        break;
+      case "add":
+        result = result + (modifier.operand ?? 0);
+        break;
+      case "sub":
+        result = result - (modifier.operand ?? 0);
+        break;
+      case "mul":
+        result = result * (modifier.operand ?? 1);
+        break;
+      case "div":
+        if (modifier.operand && modifier.operand !== 0) {
+          result = result / modifier.operand;
+        }
+        break;
+      case "delta":
+        if (previousValue !== undefined) {
+          result = result - previousValue.value;
+        }
+        break;
+      case "derivative":
+        if (previousValue !== undefined && currentTimestamp !== undefined) {
+          const timeDiff = (currentTimestamp - previousValue.timestamp) / 1000; // 转换为秒
+          if (timeDiff > 0) {
+            result = (result - previousValue.value) / timeDiff;
+          }
+        }
+        break;
+    }
+  }
+
+  return result;
+}
+
+function getFieldValue(
+  message: unknown,
+  path: string | undefined,
+  previousValue?: { value: number; timestamp: number },
+  currentTimestamp?: number,
+): unknown {
   if (!message || !path) {
     return undefined;
   }
 
-  const segments = path.split(".").filter((segment) => segment.length > 0);
+  const { fieldPath, modifiers } = parseMathModifiers(path);
+  const segments = fieldPath.split(".").filter((segment) => segment.length > 0);
   let current: unknown = message as Record<string, unknown>;
 
   for (const segment of segments) {
@@ -51,6 +240,11 @@ function getFieldValue(message: unknown, path: string | undefined): unknown {
 
     const obj = current as Record<string, unknown>;
     current = obj[segment];
+  }
+
+  // 应用 math modifiers
+  if (typeof current === "number" && modifiers.length > 0) {
+    current = applyMathModifiers(current, modifiers, previousValue, currentTimestamp);
   }
 
   return current;
@@ -80,7 +274,7 @@ function parseMessagePath(messagePath: string | undefined): {
   };
 }
 
-function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactElement {
+function GaugePanel({ context }: { context: PanelExtensionContext }): ReactElement {
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
   const [colorScheme, setColorScheme] = useState<"light" | "dark">("dark");
@@ -88,11 +282,14 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
   const [messageValue, setmessageValue] = useState(0);
   const [messageTimestamp, setMessageTimestamp] = useState(0);
+  const [previousMessageValue, setPreviousMessageValue] = useState<{
+    value: number;
+    timestamp: number;
+  } | undefined>();
 
   const [state, setState] = useState<PanelState>(() => {
     const initial = context.initialState as Partial<PanelState> | undefined;
 
-    // 兼容旧版本单独保存 topic 和 fieldPath 的状态
     const legacyData = (context.initialState as any)?.data as
       | { topic?: string; fieldPath?: string; min?: number; max?: number }
       | undefined;
@@ -108,7 +305,6 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
         messagePath: initial?.data?.messagePath ?? legacyMessagePath ?? "",
         min: initial?.data?.min ?? 0,
         max: initial?.data?.max ?? 120,
-        timeWindow: initial?.data?.timeWindow ?? 10,
       },
       view: {
         component: initial?.view?.component ?? "speedometer",
@@ -136,10 +332,6 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
         if (group === "data") {
           if (field === "messagePath") {
             next.data.messagePath = value as string;
-            const { topic } = parseMessagePath(next.data.messagePath);
-            if (topic) {
-              context.subscribe([{ topic }]);
-            }
           } else if (field === "min") {
             const num = Number(value);
             if (!Number.isNaN(num)) {
@@ -339,7 +531,7 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
     }
 
     const { topic, fieldPath } = parseMessagePath(state.data.messagePath);
-    if (!topic) {
+    if (!topic || !fieldPath) {
       return;
     }
 
@@ -352,11 +544,12 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
 
     // 提取消息时间戳（使用receiveTime）
     const receiveTime = lastEvent.receiveTime;
-    const timestampMs = receiveTime.sec * 1000 + receiveTime.nsec / 1000000;
-    setMessageTimestamp(timestampMs);
+    const currentTimestampMs = receiveTime.sec * 1000 + receiveTime.nsec / 1000000;
+    setMessageTimestamp(currentTimestampMs);
 
     const message = (lastEvent as MessageEvent).message;
-    const rawValue = fieldPath ? getFieldValue(message, fieldPath) : (message as unknown);
+    // 使用 fieldPath（包含修饰符）来获取值，不包括 topic 名称
+    const rawValue = getFieldValue(message, fieldPath, previousMessageValue, currentTimestampMs);
 
     let nextValue: number | undefined;
     if (typeof rawValue === "number") {
@@ -369,9 +562,13 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
     }
 
     if (typeof nextValue === "number" && !Number.isNaN(nextValue)) {
-      setmessageValue(nextValue);
+      // 保存当前值作为下次的前一个值（使用当前状态中的值）
+      setmessageValue((prevValue) => {
+        setPreviousMessageValue({ value: prevValue, timestamp: messageTimestamp });
+        return nextValue;
+      });
     }
-  }, [messages, state.data.messagePath]);
+  }, [messages, state.data.messagePath, previousMessageValue]);
 
   return (
     <div
@@ -384,9 +581,9 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
       }}
     >
       {state.view.component === "speedometer" ? (
-        <Speedometer value={messageValue * 3.6} min={state.data.min} max={state.data.max} />
+        <Speedometer value={messageValue} min={state.data.min} max={state.data.max} />
       ) : state.view.component === "steeringWheel" ? (
-        <SteeringWheel angle={messageValue * 15.6 * 57.29578} showAngle={state.data.showAngle} />
+        <SteeringWheel angle={messageValue} showAngle={state.data.showAngle} />
       ) : (
         <TimeSeriesChart 
           value={messageValue}
@@ -404,9 +601,9 @@ function ExamplePanel({ context }: { context: PanelExtensionContext }): ReactEle
   );
 }
 
-export function initExamplePanel(context: PanelExtensionContext): () => void {
+export function initGaugePanel(context: PanelExtensionContext): () => void {
   const root = createRoot(context.panelElement);
-  root.render(<ExamplePanel context={context} />);
+  root.render(<GaugePanel context={context} />);
 
   return () => {
     root.unmount();

@@ -7,8 +7,8 @@
 
 import { ExtensionContext } from "@foxglove/extension";
 
-import { initExamplePanel } from "./panel";
+import { initGaugePanel } from "./panel";
 
 export function activate(extensionContext: ExtensionContext): void {
-  extensionContext.registerPanel({ name: "gauge_utils", initPanel: initExamplePanel });
+  extensionContext.registerPanel({ name: "gauge_utils", initPanel: initGaugePanel });
 }
