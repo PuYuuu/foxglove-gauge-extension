@@ -1,7 +1,7 @@
 /*
  * @Author: puyu yu.pu@qq.com
  * @Date: 2025-12-22 23:19:47
- * @LastEditTime: 2025-12-28 21:48:03
+ * @LastEditTime: 2026-04-27 23:43:59
  * @FilePath: \foxglove-gauge-extension\src\panel.tsx
  */
 
@@ -23,6 +23,8 @@ type PanelState = {
     messagePath?: string;
     min: number;
     max: number;
+    unit?: "km/h" | "m/s" | "custom";
+    customUnit?: string;
     timeWindow?: number;   // 时间窗口，单位秒
     showGrid?: boolean;
     valueDisplayMode?: "dynamic" | "center";
@@ -305,6 +307,15 @@ function GaugePanel({ context }: { context: PanelExtensionContext }): ReactEleme
         messagePath: initial?.data?.messagePath ?? legacyMessagePath ?? "",
         min: initial?.data?.min ?? 0,
         max: initial?.data?.max ?? 120,
+        unit: initial?.data?.unit ?? "km/h",
+        customUnit: initial?.data?.customUnit ?? "",
+        timeWindow: initial?.data?.timeWindow ?? 10,
+        showGrid: initial?.data?.showGrid ?? true,
+        valueDisplayMode: initial?.data?.valueDisplayMode ?? "center",
+        showAngle: initial?.data?.showAngle ?? true,
+        lineColor: initial?.data?.lineColor ?? "#0066cc",
+        lineWidth: initial?.data?.lineWidth ?? 2,
+        alpha: initial?.data?.alpha ?? 0,
       },
       view: {
         component: initial?.view?.component ?? "speedometer",
@@ -342,6 +353,10 @@ function GaugePanel({ context }: { context: PanelExtensionContext }): ReactEleme
             if (!Number.isNaN(num)) {
               next.data.max = num;
             }
+          } else if (field === "unit") {
+            next.data.unit = value as "km/h" | "m/s" | "custom";
+          } else if (field === "customUnit") {
+            next.data.customUnit = value as string;
           } else if (field === "timeWindow") {
             const num = Number(value);
             if (!Number.isNaN(num) && num > 0) {
@@ -411,11 +426,29 @@ function GaugePanel({ context }: { context: PanelExtensionContext }): ReactEleme
         input: "number",
         value: state.data.max,
       };
+      dataFields.unit = {
+        label: "Unit",
+        input: "select",
+        value: state.data.unit ?? "km/h",
+        options: [
+          { value: "km/h", label: "km/h" },
+          { value: "m/s", label: "m/s" },
+          { value: "custom", label: "Custom" },
+        ],
+      };
+      if (state.data.unit === "custom") {
+        dataFields.customUnit = {
+          label: "Custom Unit",
+          input: "string",
+          value: state.data.customUnit ?? "",
+          placeholder: "Enter unit text",
+        };
+      }
     } else if (state.view.component === "timeSeriesChart") {
       dataFields.timeWindow = {
         label: "Time Window (seconds)",
         input: "number",
-        value: state.data.timeWindow,
+        value: state.data.timeWindow ?? 10,
         min: 1,
         max: 300,
         step: 1,
@@ -428,7 +461,7 @@ function GaugePanel({ context }: { context: PanelExtensionContext }): ReactEleme
       dataFields.valueDisplayMode = {
         label: "Value Display",
         input: "select",
-        value: state.data.valueDisplayMode ?? "dynamic",
+        value: state.data.valueDisplayMode ?? "center",
         options: [
           { value: "dynamic", label: "Follow" },
           { value: "center", label: "Center" },
@@ -459,7 +492,7 @@ function GaugePanel({ context }: { context: PanelExtensionContext }): ReactEleme
       dataFields.showAngle = {
         label: "Show Angle",
         input: "boolean",
-        value: state.data.showAngle ?? false,
+        value: state.data.showAngle ?? true,
       };
     }
 
@@ -581,7 +614,12 @@ function GaugePanel({ context }: { context: PanelExtensionContext }): ReactEleme
       }}
     >
       {state.view.component === "speedometer" ? (
-        <Speedometer value={messageValue} min={state.data.min} max={state.data.max} />
+        <Speedometer
+          value={messageValue}
+          min={state.data.min}
+          max={state.data.max}
+          unit={state.data.unit === "custom" ? state.data.customUnit ?? "" : state.data.unit ?? "km/h"}
+        />
       ) : state.view.component === "steeringWheel" ? (
         <SteeringWheel angle={messageValue} showAngle={state.data.showAngle} />
       ) : (

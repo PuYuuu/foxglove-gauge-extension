@@ -11,12 +11,14 @@ interface SpeedometerProps {
   value: number;
   min?: number;
   max?: number;
+  unit?: string;
 }
 
 const Speedometer: React.FC<SpeedometerProps> = ({
   value,
   min = 0,
   max = 120,
+  unit = "km/h",
 }) => {
   const startAngle = -120;
   const endAngle = 120;
@@ -167,7 +169,7 @@ const Speedometer: React.FC<SpeedometerProps> = ({
         <circle cx={centerX} cy={centerY} r="6" fill="#fff" />
         {/* 当前数值 */}
         <text x={centerX} y={centerY + 45} fontSize="18" fill="#ffffff" textAnchor="middle" alignmentBaseline="middle" fontWeight="bold">
-          {displayValue} km/h
+          {displayValue}{unit ? ` ${unit}` : ""}
         </text>
       </svg>
     </div>
